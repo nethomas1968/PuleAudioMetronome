@@ -66,6 +66,8 @@ play_state_t Gplay_state = PLAY_STATE_PAUSED;
 int GiSpeedBPM = 60;
 bool GbRepeat = TRUE;
 
+int ThreadIdx = 0;
+
 
 void showThreadInfo(pthread_key_t theKey)
 {
@@ -118,7 +120,6 @@ void *Thread2(void *x_void_ptr)
     while (1) {
         if (GiDebug == 1) printf("Thread[%d]: Waiting for lock\n", threadIndex);
         mutex_lock(&p_mutex[threadIndex]);
-        //usleep(400);
         
         if (GiDebug == 1) printf("Thread[%d]: unlock and waiting for signal...\n", threadIndex);
         pthread_cond_wait(&cond[threadIndex], &p_mutex[threadIndex].p_mutex);
@@ -132,10 +133,9 @@ void *Thread2(void *x_void_ptr)
         
         if (Gplay_state == PLAY_STATE_PLAYING) {
         
-            while (PCMPlayFile(iInstrumentIndex) != 0) {
-                sleep(3);
-                printf("=================================\n");
-            }
+            //printf("Thread[%d]: Playing iInstrumentIndex=%d\n", threadIndex, iInstrumentIndex);
+
+            PCMPlayFile(iInstrumentIndex);
         
             ++GiGlobalPlayCounter;
         }
@@ -172,20 +172,22 @@ int main(int argc, char **argv)
     int x[NUM_WORKER_THREADS];
     pthread_t t2[NUM_WORKER_THREADS];
     int idx;
-    int ThreadIdx = 0;
     pthread_condattr_t    attr;
     int fin;
     int option;
     int iSocketQuit = 0;
+    bool bStartPlaying = FALSE;
     
-    while ((option = getopt(argc, argv,"d")) != -1)
+    while ((option = getopt(argc, argv,"dp")) != -1)
     {
         switch (option)
         {
-             case 'd' :  GiDebug = 1;
-                 break;
-             default: Usage(argv[0]);
-                 return -1;
+            case 'd' :  GiDebug = 1;
+                break;
+            case 'p' :  bStartPlaying = TRUE;
+                break;
+            default: Usage(argv[0]);
+                return -1;
         }
     }
     
@@ -226,14 +228,26 @@ int main(int argc, char **argv)
     
     /* Start a Socket listener Thread */
     SocketThreadStart(GiDebug);
-    
-    usleep(10000);
-    
+
     ThreadIdx=0;
+
+    if (bStartPlaying == TRUE) {
+        MultiThreadSequencer_Play();
+    }
+
+
+#if 0
+    // Initally play a period of silence.
+    mutex_lock(&p_mutex[ThreadIdx]); // Now Thread2 get a chance to work.
+    GiWorkerThreadSequenceIndex[ThreadIdx] = 2;
+    pthread_cond_signal(&cond[ThreadIdx]);
+    mutex_unlock(&p_mutex[ThreadIdx]);
+    ++ThreadIdx;
+    if (ThreadIdx >= NUM_WORKER_THREADS) ThreadIdx = 0;
+#endif
+    //usleep(100000);
     
     while (1) {
-        if (GiDebug == 1) printf("MAIN - Sleeping\n");
-        usleep(BPMToUS(GiSpeedBPM));
         
         /* Check if all threads have finished */
         fin=1;
@@ -290,6 +304,10 @@ int main(int argc, char **argv)
         // Use a different thread next time, just for variety.
         ++ThreadIdx;
         if (ThreadIdx >= NUM_WORKER_THREADS) ThreadIdx = 0;
+
+        
+        if (GiDebug == 1) printf("MAIN - Sleeping\n");
+        usleep(BPMToUS(GiSpeedBPM));
     }
 
     for (idx = 0; idx < NUM_WORKER_THREADS; idx++) {
@@ -320,8 +338,18 @@ int main(int argc, char **argv)
 
 void MultiThreadSequencer_Play(void)
 {
+    GiPlayIdx = 1; // Back to beat 1.
     Gplay_state = PLAY_STATE_PLAYING;
     if (GiDebug == 1) printf("State is now playing\n");
+
+    // Initally play a period of silence.
+    mutex_lock(&p_mutex[ThreadIdx]);
+    GiWorkerThreadSequenceIndex[ThreadIdx] = 2; // Index 2 is silence.
+    pthread_cond_signal(&cond[ThreadIdx]);
+    mutex_unlock(&p_mutex[ThreadIdx]);
+    ++ThreadIdx;
+    if (ThreadIdx >= NUM_WORKER_THREADS) ThreadIdx = 0;
+    usleep(100000);
 }
 
 void MultiThreadSequencer_Pause(void)

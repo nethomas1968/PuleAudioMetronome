@@ -13,6 +13,7 @@
 
 #include "Headers/LowSeikoSQ50.h"
 #include "Headers/HighSeikoSQ50.h"
+#include "Headers/Silent.h"
 
 
 #define FORMAT PA_SAMPLE_S16LE
@@ -46,16 +47,18 @@ int PCMPlayFile(int instrument_index)
     
     struct userdata u = {};
     u.ud_iPos = 0;
+
+    //printf("PCMPlayFile() instrument_index=%d\n", instrument_index);
     
     
     switch (instrument_index) {
         case 0: u.ud_pcm_ptr = LowSeikoSQ50; u.ud_pcm_len = LowSeikoSQ50_len; break;
         case 1: u.ud_pcm_ptr = HighSeikoSQ50; u.ud_pcm_len = HighSeikoSQ50_len; break;
+        case 2: u.ud_pcm_ptr = Silent; u.ud_pcm_len = Silent_len; break;
         default : break;
     }
     
-    if (GiDebug == 1) printf("PCMPlayer.c: START, instrument_index=%d\n", instrument_index);
-    
+    if (GiDebug == 1) printf("PCMPlayer.c: START, instrument_index=%d\n", instrument_index);    
 
     // Get a mainloop and its context
     mainloop = pa_threaded_mainloop_new();
@@ -95,7 +98,7 @@ int PCMPlayFile(int instrument_index)
         ++cLoops;
     }
     
-    if (iRet == 0) {        
+    if (iRet == 0) {  
         // Create a playback stream
         pa_sample_spec sample_specifications;
         sample_specifications.format = FORMAT;
@@ -140,8 +143,12 @@ int PCMPlayFile(int instrument_index)
 
         // We could be doing other stuff here.
 
+        //printf("Wait for drained, instrument_index=%d\n", instrument_index);
+
         // Wait for the stream to drain, then we know playback is finished.
         wait_for_stream_drain(mainloop, stream);
+
+        //printf("Drained, instrument_index=%d\n", instrument_index);
         
         pa_threaded_mainloop_stop(mainloop);
         
@@ -151,7 +158,8 @@ int PCMPlayFile(int instrument_index)
         pa_threaded_mainloop_free(mainloop);
         
         if (GiDebug == 1) printf("Done\n");
-    } else {
+    } 
+    else {
         pa_threaded_mainloop_unlock(mainloop);
         pa_threaded_mainloop_stop(mainloop);
         pa_threaded_mainloop_free(mainloop);
@@ -176,10 +184,10 @@ void stream_write_cb(pa_stream *stream, size_t requested_bytes, void *userdata) 
     
     struct userdata *u = (struct userdata*)userdata;
     
-    //if (GiDebug == 1) printf("stream_write_cb: requested_bytes=%ld, GiPos=%d\n", requested_bytes, u->ud_iPos);
+    if (GiDebug == 1) printf("stream_write_cb: requested_bytes=%ld, GiPos=%d\n", requested_bytes, u->ud_iPos);
     
     if (u->ud_iPos >= u->ud_pcm_len) {
-        //if (GiDebug == 1) printf("stream_write_cb: out of range\n");
+        if (GiDebug == 1) printf("stream_write_cb: out of range\n");
         return;
     }
     
@@ -209,7 +217,7 @@ void stream_write_cb(pa_stream *stream, size_t requested_bytes, void *userdata) 
         u->ud_iPos = newPos;
     }
     
-    //if (GiDebug == 1) printf("stream_write_cb: END, done in %d loops\n", iLoops);
+    if (GiDebug == 1) printf("stream_write_cb: END, done in %d loops\n", iLoops);
 }
 
 void stream_success_cb(pa_stream *stream, int success, void *userdata) {
